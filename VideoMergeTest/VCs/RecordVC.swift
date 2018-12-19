@@ -1,11 +1,3 @@
-//
-//  RecordVC.swift
-//  VideoMergeTest
-//
-//  Created by gitwebmobi2018 on 12/11/18.
-//  Copyright © 2018 gitwebmobi2018. All rights reserved.
-//
-
 import UIKit
 import AVFoundation
 import AVKit
@@ -33,7 +25,6 @@ class RecordVC: UIViewController {
     
     // video
     var sessionQueue                        : DispatchQueue!
-    var captureSession                      : AVCaptureSession?
     
     var frontCameraInput                    : AVCaptureDeviceInput?
     var frontCamera                         : AVCaptureDevice?
@@ -41,12 +32,8 @@ class RecordVC: UIViewController {
     var rearCameraInput                     : AVCaptureDeviceInput?
     var rearCamera                          : AVCaptureDevice?
     
-    var movieFileOutput                     : AVCaptureMovieFileOutput?
-    var photoOutput                         : AVCapturePhotoOutput?
-    
-    var previewLayer                        : AVCaptureVideoPreviewLayer?
-    
-    var flashMode                           = AVCaptureDevice.FlashMode.off
+    var videoDataOutput                     : AVCaptureVideoDataOutput?
+    var audioDataOutput                     : AVCaptureAudioDataOutput?
     
     var isRecording                         : Bool = false
     
@@ -60,9 +47,21 @@ class RecordVC: UIViewController {
     
     var isConnectedWithEarPiece             : Bool = false
     
-    var startAudioTime                      : Double?
-    
     var player                              : AVAudioPlayer?
+    
+    lazy var captureSession: AVCaptureSession = {
+        let s = AVCaptureSession()
+        s.sessionPreset = AVCaptureSession.Preset(rawValue: convertFromAVCaptureSessionPreset(AVCaptureSession.Preset.hd1920x1080))
+        return s
+    }()
+    
+    var sampleBufferGlobal                  : CMSampleBuffer?
+    var presentationTime                    : CMTime?
+    var outputSettings                      = [String: Any]()
+    var videoWriterInput                    : AVAssetWriterInput!
+    var audioWriterInput                    : AVAssetWriterInput!
+    var assetWriter                         : AVAssetWriter!
+    var justClickedStopBtn                  : Bool = false
     
     //MARK: - IBAction functions
     @IBAction func onRecordBtn(_ sender: Any) {
@@ -74,6 +73,7 @@ class RecordVC: UIViewController {
             self.isConnectedWithEarPiece = self.checkIfConnectedWithEarPiece()
             self.startRecording()
         } else {
+            self.justClickedStopBtn = true
             self.stopRecording()
         }
     }
@@ -110,11 +110,11 @@ class RecordVC: UIViewController {
         }
         
         func updateSwitchFlashBtn() {
-            if self.flashMode == .on {
-                switchFlashBtn.setTitle("Flash on", for: .normal)
-            } else {
-                switchFlashBtn.setTitle("Flash off", for: .normal)
-            }
+//            if self.flashMode == .on {
+//                switchFlashBtn.setTitle("Flash on", for: .normal)
+//            } else {
+//                switchFlashBtn.setTitle("Flash off", for: .normal)
+//            }
         }
         
         switch btn {
@@ -140,18 +140,6 @@ extension RecordVC {
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        self.configureAudioPlayer { (isSuccess, resultDescription) in
-            if isSuccess {
-                print("Succeed to configure audio player!")
-            } else {
-                let  alert = UIAlertController.init(title: "Video Merge Test", message: resultDescription, preferredStyle: .alert )
-                alert.addAction(UIAlertAction(title: "OK", style: .default, handler: { (okAction) in
-                    self.dismiss(animated: true, completion: nil)
-                }))
-                self.present(alert, animated: true, completion: nil )
-            }
-        }
-        
         self.manageAppUrlService = ManageAppURLService()
         
         self.checkDeviceAuthorizationStatus({ (isDeviceAccessGranted, resultDescription) in
@@ -165,6 +153,26 @@ extension RecordVC {
                 self.present(alert, animated: true, completion: nil )
             }
         })
+        
+        self.configureAudioPlayer { (isSuccess, resultDescription) in
+            if isSuccess {
+                print("Succeed to configure audio player!")
+            } else {
+                let  alert = UIAlertController.init(title: "Video Merge Test", message: resultDescription, preferredStyle: .alert )
+                alert.addAction(UIAlertAction(title: "OK", style: .default, handler: { (okAction) in
+                    self.dismiss(animated: true, completion: nil)
+                }))
+                self.present(alert, animated: true, completion: nil )
+            }
+        }
+    }
+    
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        
+        self.displayPreview()
+        
+        captureSession.startRunning()
     }
     
     override func viewWillDisappear(_ animated: Bool) {
@@ -193,25 +201,29 @@ extension RecordVC {
         
         let aVideoAssetTrack = aVideoAsset.tracks(withMediaType: AVMediaType.video)[0]
         let aAudioAssetTrack = aAudioAsset.tracks(withMediaType: AVMediaType.audio)[0]
-        let aAudioOfVideoAssetTrack = aVideoAsset.tracks(withMediaType: AVMediaType.audio).first
+        let aAudioOfVideoAssetTrack = aVideoAsset.tracks(withMediaType: AVMediaType.audio)[0]
         
         // Default must have tranformation
         videoTrack!.preferredTransform = aVideoAssetTrack.preferredTransform
         
         do {
             
-            
             if self.isConnectedWithEarPiece {
-                let timeScale = aAudioAsset.duration.timescale
-                let startTime = CMTime(seconds: self.startAudioTime!, preferredTimescale: timeScale)
-//                let startTime = CMTime(seconds: 0, preferredTimescale: 600)
-                print("Time started audio file with headphone ----------> ", startTime, ", TimeScale is -----> ", timeScale)
-                try audioTrack!.insertTimeRange(CMTimeRangeMake(start: startTime, duration: aVideoAssetTrack.timeRange.duration), of: aAudioAssetTrack, at: startTime)
-                try audioOfVideoTrack!.insertTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: aVideoAssetTrack.timeRange.duration), of: aAudioOfVideoAssetTrack!, at: CMTime.zero)
+                let duration = aVideoAsset.duration
+                
+//                audioTrack?.scaleTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: duration), toDuration: duration)
+                
+                try videoTrack!.insertTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: duration), of: aVideoAssetTrack, at: CMTime.zero)
+                
+                try audioTrack!.insertTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: duration), of: aAudioAssetTrack, at: CMTime.zero)
+                
+                try audioOfVideoTrack!.insertTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: duration), of: aAudioOfVideoAssetTrack, at: CMTime.zero)
+                
             } else {
+                
                 try videoTrack!.insertTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: aVideoAssetTrack.timeRange.duration), of: aVideoAssetTrack, at: CMTime.zero)
                 
-                try audioOfVideoTrack!.insertTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: aVideoAssetTrack.timeRange.duration), of: aAudioOfVideoAssetTrack!, at: CMTime.zero)
+                try audioOfVideoTrack!.insertTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: aVideoAssetTrack.timeRange.duration), of: aAudioOfVideoAssetTrack, at: CMTime.zero)
             }
         } catch {
             print(error.localizedDescription)
@@ -298,53 +310,47 @@ extension RecordVC {
     
 }
 
-//MARK: - Camera functions
+//MARK: - Camera & Audio functions
 extension RecordVC {
     
     func prepare(completionHandler: @escaping (Error?) -> Void) {
         
-        func createCaptureSession() {
-            self.captureSession = AVCaptureSession()
-            self.captureSession?.sessionPreset = AVCaptureSession.Preset.hd1920x1080
-        }
-        
         func configureCaptureDevices() throws {
-            
-            let session = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera], mediaType: AVMediaType.video, position: .unspecified)
-            let cameras = session.devices.compactMap({ $0 })
-            guard cameras.count != 0, !cameras.isEmpty else {
-                throw CameraServiceError.noCamerasAvailable
-            }
-            
-            for camera in cameras {
-                if camera.position == .front {
-                    self.frontCamera = camera
-                }
-                
-                if camera.position == .back {
-                    self.rearCamera = camera
-                }
-            }
+            self.frontCamera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front)
+            self.rearCamera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
         }
         
         func configureDeviceInputs() throws {
-            guard let captureSession = self.captureSession else { throw CameraServiceError.captureSessionIsMissing }
             
             if let rearCamera = self.rearCamera {
-                self.rearCameraInput = try AVCaptureDeviceInput(device: rearCamera)
-                
-                if captureSession.canAddInput(self.rearCameraInput!) { captureSession.addInput(self.rearCameraInput!) }
-                
-                self.currentCameraPosition = .rear
-            } else
+                do {
+                    self.rearCameraInput = try AVCaptureDeviceInput(device: rearCamera)
+                    
+                    if captureSession.canAddInput(self.rearCameraInput!) { captureSession.addInput(self.rearCameraInput!) }
+                    
+                    self.currentCameraPosition = .rear
+                } catch {
+                    throw CameraServiceError.inputsAreInvalid
+                }
+            }
+            else
             if let frontCamera = self.frontCamera {
-                self.frontCameraInput = try AVCaptureDeviceInput(device: frontCamera)
-                
-                if captureSession.canAddInput(self.frontCameraInput!) { captureSession.addInput(self.frontCameraInput!) }
-                else { throw CameraServiceError.inputsAreInvalid }
-                
-                self.currentCameraPosition = .front
-            } else
+                do {
+                    self.frontCameraInput = try AVCaptureDeviceInput(device: frontCamera)
+                    
+                    if captureSession.canAddInput(self.frontCameraInput!) {
+                        captureSession.addInput(self.frontCameraInput!)
+                    }
+                    else {
+                        throw CameraServiceError.inputsAreInvalid
+                    }
+                    
+                    self.currentCameraPosition = .front
+                } catch {
+                    throw CameraServiceError.inputsAreInvalid
+                }
+            }
+            else
             { throw CameraServiceError.noCamerasAvailable }
         }
         
@@ -354,41 +360,39 @@ extension RecordVC {
                 throw CameraServiceError.noCamerasAvailable
             }
             
-            let audioDeviceInput = try? AVCaptureDeviceInput(device: audioDevice )
-            
-            guard let captureSession = self.captureSession else { throw CameraServiceError.captureSessionIsMissing }
-            
-            if captureSession.canAddInput(audioDeviceInput!) {
-                captureSession.addInput(audioDeviceInput!)
-            }
-        }
-        
-        func configureMovieOutput() throws {
-            
-            guard let captureSession = self.captureSession else { throw CameraServiceError.captureSessionIsMissing }
-            
-            self.movieFileOutput = AVCaptureMovieFileOutput()
-            
-            if captureSession.canAddOutput(self.movieFileOutput!) {
-                captureSession.addOutput(self.movieFileOutput!)
+            do {
+                let audioDeviceInput = try AVCaptureDeviceInput(device: audioDevice )
                 
-                let connection = self.movieFileOutput?.connection(with: AVMediaType.video )
-                
-                if ( connection?.isVideoStabilizationSupported )! {
-                    connection?.preferredVideoStabilizationMode = .auto
+                if captureSession.canAddInput(audioDeviceInput) {
+                    captureSession.addInput(audioDeviceInput)
                 }
+            } catch {
+                throw CameraServiceError.inputsAreInvalid
             }
         }
         
-        func configurePhotoOutput() throws {
-            guard let captureSession = self.captureSession else { throw CameraServiceError.captureSessionIsMissing }
+        func configureVideoAudioDataOutput() {
             
-            self.photoOutput = AVCapturePhotoOutput()
-            self.photoOutput!.setPreparedPhotoSettingsArray([AVCapturePhotoSettings(format: [AVVideoCodecKey : AVVideoCodecType.jpeg])], completionHandler: nil)
+            self.videoDataOutput = AVCaptureVideoDataOutput()
+            self.videoDataOutput?.videoSettings = [(kCVPixelBufferPixelFormatTypeKey as NSString) : NSNumber(value: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange as UInt32)] as [String : Any]
+            self.videoDataOutput?.alwaysDiscardsLateVideoFrames = true
             
-            if captureSession.canAddOutput(self.photoOutput!) { captureSession.addOutput(self.photoOutput!) }
+            self.audioDataOutput = AVCaptureAudioDataOutput()
             
-            captureSession.startRunning()
+            if captureSession.canAddOutput(self.videoDataOutput!) {
+                captureSession.addOutput(self.videoDataOutput!)
+            }
+            
+            if captureSession.canAddOutput(self.audioDataOutput!) {
+                captureSession.addOutput(self.audioDataOutput!)
+            }
+            
+            captureSession.commitConfiguration()
+            
+            self.sessionQueue = DispatchQueue(label: "com.videomergetest.videoQueue", qos: .utility, attributes: .concurrent)
+            self.videoDataOutput?.setSampleBufferDelegate(self, queue: self.sessionQueue)
+            self.audioDataOutput?.setSampleBufferDelegate(self, queue: DispatchQueue(label: "com.videomergetest.audioQueue", qos: .utility, attributes: .concurrent))
+            
         }
         
         func setAudioSession() throws {
@@ -408,16 +412,47 @@ extension RecordVC {
             }
         }
         
+        func setupAssetWriter () throws {
+            outputSettings = [AVVideoCodecKey   : AVVideoCodecType.h264,
+                              AVVideoWidthKey   : NSNumber(value: 1920.0),
+                              AVVideoHeightKey  : NSNumber(value: 1080.0),
+                              AVVideoCompressionPropertiesKey : [
+                                AVVideoAverageBitRateKey : 2300000,
+                              ]
+                             ] as [String : Any]
+            
+            videoWriterInput = AVAssetWriterInput(mediaType: AVMediaType.video, outputSettings: outputSettings)
+            audioWriterInput = AVAssetWriterInput(mediaType: AVMediaType.audio, outputSettings: nil)
+            
+            videoWriterInput.expectsMediaDataInRealTime = true
+            audioWriterInput.expectsMediaDataInRealTime = true
+            
+            let fileName = self.manageAppUrlService.newVideoFileName()
+            let outputFileUrl = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(fileName)
+            do {
+                assetWriter = try AVAssetWriter(outputURL: outputFileUrl, fileType: AVFileType.mov)
+                if assetWriter.canAdd(videoWriterInput) {
+                    assetWriter.add(videoWriterInput)
+                }
+                
+                if assetWriter.canAdd(audioWriterInput) {
+                    assetWriter.add(audioWriterInput)
+                }
+            } catch {
+                throw CameraServiceError.inputsAreInvalid
+            }
+            
+        }
+        
         self.sessionQueue = DispatchQueue(label: "PrepareForCamera")
         self.sessionQueue.async {
             do {
-                createCaptureSession()
                 try configureCaptureDevices()
                 try configureDeviceInputs()
                 try configureAudioCaptureDevice()
-                try configureMovieOutput()
-                try configurePhotoOutput()
+                configureVideoAudioDataOutput()
                 try setAudioSession()
+                try setupAssetWriter()
             } catch {
                 DispatchQueue.main.async {
                     completionHandler(error)
@@ -430,8 +465,36 @@ extension RecordVC {
         }
     }
     
-    func displayPreview() throws {
-        guard let captureSession = self.captureSession, captureSession.isRunning else { throw CameraServiceError.captureSessionIsMissing }
+    func configureAudioPlayer(_ completion: @escaping (Bool, String) -> Void) {
+        guard let url = Bundle.main.url(forResource: "test", withExtension: "mp3") else {
+            completion(false, "There is no sound file!")
+            return
+        }
+        
+        do {
+            self.player = try AVAudioPlayer(contentsOf: url, fileTypeHint: AVFileType.mp3.rawValue)
+            
+            if self.player == nil {
+                completion(false, "Couldn't configure a player with this file!")
+            } else {
+                
+                let isPreparedForPlaying = self.player?.prepareToPlay() ?? false
+                if !isPreparedForPlaying {
+                    completion(false, "Failed to prepare audio file to be preload!")
+                }
+                
+                self.player?.delegate = self
+                
+                completion(true, "Success!")
+            }
+            
+        } catch let error {
+            print(error.localizedDescription)
+            completion(false, error.localizedDescription)
+        }
+    }
+    
+    func displayPreview() {
         
         self.previewView.setSession(session: captureSession)
         DispatchQueue.main.async {
@@ -449,11 +512,11 @@ extension RecordVC {
             case .unknown:
                 orientation = nil
             }
-
+            
             if let orientation = orientation {
                 (self.previewView.layer as! AVCaptureVideoPreviewLayer).connection?.videoOrientation = orientation
             }
-
+            
         }
     }
     
@@ -470,9 +533,9 @@ extension RecordVC {
     }
     
     func switchCameras() throws {
-        guard let currentCameraPosition = currentCameraPosition, let captureSession = self.captureSession, captureSession.isRunning else { throw CameraServiceError.captureSessionIsMissing }
+        guard let currentCameraPosition = currentCameraPosition, self.captureSession.isRunning else { throw CameraServiceError.captureSessionIsMissing }
         
-        captureSession.beginConfiguration()
+        self.captureSession.beginConfiguration()
         
         func switchToFrontCamera() throws {
             guard captureSession.inputs.count != 0, let rearCameraInput = self.rearCameraInput, captureSession.inputs.contains(rearCameraInput),
@@ -522,79 +585,117 @@ extension RecordVC {
     func configureCameraSession() {
         self.prepare {(error) in
             if let error = error {
-                print(error)
-            } else {
-                try? self.displayPreview()
-            }
+                let  alert = UIAlertController(title: "VideoMergeTest", message: error.localizedDescription, preferredStyle: .alert )
+                let ok = UIAlertAction(title: "Ok", style: .default, handler: nil)
+                alert.addAction(ok)
+                self.present(alert, animated: true, completion: nil )
+            } 
         }
     }
     
     func startRecording() {
         
-        self.sessionQueue.async {
-            
-            self.movieFileOutput!.movieFragmentInterval = CMTime.invalid
-            
-            self.movieFileOutput!.connection(with: AVMediaType.video)?.videoOrientation = ((self.previewView.layer as! AVCaptureVideoPreviewLayer).connection?.videoOrientation)!
-            
-            // Start recording to a temporary file.
-            let fileName = self.manageAppUrlService.newVideoFileName()
-            let outputFilePath = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(fileName)
-            
-            self.movieFileOutput!.startRecording(to: outputFilePath, recordingDelegate:self as AVCaptureFileOutputRecordingDelegate )
+        self.presentationTime = nil
+//        setUpWriter()
+        
+        assetWriter.startWriting()
+        self.player?.play()
+        
+        if assetWriter.status == .writing {
+            print("status writing")
+        } else if assetWriter.status == .failed {
+            print("status failed")
+        } else if assetWriter.status == .cancelled {
+            print("status cancelled")
+        } else if assetWriter.status == .unknown {
+            print("status unknown")
+        } else {
+            print("status completed")
         }
     }
     
     func stopRecording() {
-        print(self.movieFileOutput?.recordedDuration.seconds ?? 0)
-        self.movieFileOutput!.stopRecording()
+        audioWriterInput.markAsFinished()
+        videoWriterInput.markAsFinished()
+        print("marked as finished")
+        
+        assetWriter?.finishWriting(completionHandler: {
+            
+            self.videoDataOutput = nil
+            self.audioDataOutput = nil
+            
+            self.audioWriterInput = nil
+            self.videoWriterInput = nil
+            
+            self.player?.stop()
+            self.presentationTime = nil
+            if (self.assetWriter?.status == AVAssetWriter.Status.failed) {
+                let  alert = UIAlertController(title: "VideoMergeTest", message: "Cannot create a movie file right now!", preferredStyle: .alert )
+                let ok = UIAlertAction(title: "Ok", style: .default, handler: nil)
+                alert.addAction(ok)
+                self.present(alert, animated: true, completion: nil )
+            } else {
+                
+                DispatchQueue.main.async {
+                    let videoItem = VideoItem()
+                    print(self.assetWriter.outputURL)
+                    if let previewImg = self.thumbnailFromVideoAtURL(url: self.assetWriter.outputURL, andTime: CMTime.zero) {
+                        videoItem.previewImg = previewImg
+                    }
+                    videoItem.fileName = self.manageAppUrlService.getFileName(from: self.assetWriter.outputURL)
+                    
+                    self.newVideoItem = videoItem
+                    
+                    self.assetWriter = nil
+                    
+                    let actionSheet = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
+                    let saveAction = UIAlertAction(title: "Save and Exit", style: .default) { (saveAction) in
+                        self.saveNewVideoToAppDir()
+                    }
+                    let exitAction = UIAlertAction(title: "Exit", style: .default) { (exitAction) in
+                        self.dismiss(animated: true, completion: nil)
+                    }
+                    
+                    actionSheet.addAction(saveAction)
+                    actionSheet.addAction(exitAction)
+                    self.present(actionSheet, animated: true, completion: nil)
+                }
+            }
+        })
+        
+        captureSession.stopRunning()
     }
     
 }
 
-//MARK: - AVCaptureFileOutputRecordingDelegate
-extension RecordVC : AVCaptureFileOutputRecordingDelegate {
+//MARK: - AVCaptureVideoDataOutputSampleBufferDelegate & AVCaptureAudioDataOutputSampleBufferDelegate
+extension RecordVC : AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDataOutputSampleBufferDelegate {
     
-    func fileOutput(_ output: AVCaptureFileOutput, didStartRecordingTo fileURL: URL, from connections: [AVCaptureConnection]) {
+    func captureOutput(_ captureOutput: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        let writable = canWrite()
+        if writable, presentationTime == nil {
+            presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+            assetWriter.startSession(atSourceTime: presentationTime!)
+        }
         
-        self.timer = Timer.scheduledTimer(timeInterval: 1.0, target: self, selector: #selector(self.setTimer(timer:)), userInfo: nil, repeats: true )
-        
-        DispatchQueue.global().sync {
-            self.player?.play()
-            if self.isConnectedWithEarPiece {
-                self.startAudioTime = self.movieFileOutput?.recordedDuration.seconds
+        if captureOutput == videoDataOutput {
+            connection.videoOrientation = .portrait
+            
+            if connection.isVideoMirroringSupported {
+                connection.isVideoMirrored = true
             }
         }
         
+        if writable, captureOutput == videoDataOutput, videoWriterInput.isReadyForMoreMediaData {
+            videoWriterInput.append(sampleBuffer)
+        } else
+        if writable, captureOutput == audioDataOutput, audioWriterInput.isReadyForMoreMediaData {
+            audioWriterInput?.append(sampleBuffer)
+        }
     }
     
-    func fileOutput(_ output: AVCaptureFileOutput, didFinishRecordingTo outputFileURL: URL, from connections: [AVCaptureConnection], error: Error?) {
-        
-        self.player?.stop()
-        
-        self.timer.invalidate()
-        self.timer = nil
-        
-        let videoItem = VideoItem()
-        
-        if let previewImg = thumbnailFromVideoAtURL(url: outputFileURL, andTime: CMTime.zero) {
-            videoItem.previewImg = previewImg
-        }
-        videoItem.fileName = self.manageAppUrlService.getFileName(from: outputFileURL)
-        
-        self.newVideoItem = videoItem
-        
-        let actionSheet = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
-        let saveAction = UIAlertAction(title: "Save and Exit", style: .default) { (saveAction) in
-            self.saveNewVideoToAppDir()
-        }
-        let exitAction = UIAlertAction(title: "Exit", style: .default) { (exitAction) in
-            self.dismiss(animated: true, completion: nil)
-        }
-        
-        actionSheet.addAction(saveAction)
-        actionSheet.addAction(exitAction)
-        present(actionSheet, animated: true, completion: nil)
+    func captureOutput(_ captureOutput: AVCaptureOutput, didDrop sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        // Here you can count how many frames are dopped
     }
     
 }
@@ -610,16 +711,14 @@ extension RecordVC : AVAudioPlayerDelegate {
 extension RecordVC {
     
     @objc func setTimer( timer : Timer) {
-        let duration : Double = self.movieFileOutput?.recordedDuration.seconds ?? 0.0
-        let timeNow = String( format :"%02d:%02d", Int(duration.rounded(.up)/60), Int(duration.rounded(.up))%60);
-
-        self.timeLbl.text = timeNow
+//        let duration : Double = self.movieFileOutput?.recordedDuration.seconds ?? 0.0
+//        let timeNow = String( format :"%02d:%02d", Int(duration.rounded(.up)/60), Int(duration.rounded(.up))%60);
+//
+//        self.timeLbl.text = timeNow
     }
     
     func saveNewVideoToAppDir() {
         self.progressHUD.showHUD(self.view)
-        
-        print(self.movieFileOutput?.recordedDuration.seconds ?? 0)
         
         let videoUrl = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent((self.newVideoItem?.fileName)!)
         let audioUrl = Bundle.main.url(forResource: "test", withExtension: "mp3")
@@ -735,35 +834,22 @@ extension RecordVC {
         return false
     }
     
-    func configureAudioPlayer(_ completion: @escaping (Bool, String) -> Void) {
-        guard let url = Bundle.main.url(forResource: "test", withExtension: "mp3") else {
-            completion(false, "There is no sound file!")
-            return
-        }
-        
-        do {
-            
-            self.player = try AVAudioPlayer(contentsOf: url, fileTypeHint: AVFileType.mp3.rawValue)
-            
-            if self.player == nil {
-                completion(false, "Couldn't configure a player with this file!")
-            } else {
-                
-                let isPreparedForPlaying = self.player?.prepareToPlay() ?? false
-                if !isPreparedForPlaying {
-                    completion(false, "Failed to prepare audio file to be preload!")
-                }
-                
-                self.player?.delegate = self
-                
-                completion(true, "Success!")
-            }
-            
-        } catch let error {
-            print(error.localizedDescription)
-            completion(false, error.localizedDescription)
-        }
+    func canWrite() -> Bool {
+        return isRecording && assetWriter != nil && assetWriter?.status == .writing
     }
+    
+    fileprivate func convertFromAVCaptureSessionPreset(_ input: AVCaptureSession.Preset) -> String {
+        return input.rawValue
+    }
+    
+    fileprivate func convertFromAVLayerVideoGravity(_ input: AVLayerVideoGravity) -> String {
+        return input.rawValue
+    }
+    
+    fileprivate func convertFromAVMediaType(_ input: AVMediaType) -> String {
+        return input.rawValue
+    }
+
     
 }
 

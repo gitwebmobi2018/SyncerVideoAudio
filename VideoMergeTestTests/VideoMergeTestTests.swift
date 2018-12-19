@@ -1,11 +1,3 @@
-//
-//  VideoMergeTestTests.swift
-//  VideoMergeTestTests
-//
-//  Created by gitwebmobi2018 on 12/11/18.
-//  Copyright © 2018 gitwebmobi2018. All rights reserved.
-//
-
 import XCTest
 @testable import VideoMergeTest
 

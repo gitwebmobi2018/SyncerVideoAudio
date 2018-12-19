@@ -1,11 +1,3 @@
-//
-//  Constants.swift
-//  VideoMergeTest
-//
-//  Created by gitwebmobi2018 on 12/11/18.
-//  Copyright © 2018 gitwebmobi2018. All rights reserved.
-//
-
 import Foundation
 
 // user defaults values keys
