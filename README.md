@@ -5,6 +5,6 @@
   : it merges video and played audio, but merged video is lagging.
   
 - Module
-  1. Using AVCaptureMovieFileOutputDelegate
-  2. Using AVCaptureVideoDataOutput & AVCaptureAudioOutput
+1. Using AVCaptureMovieFileOutputDelegate - (branch : master)
+2. Using AVCaptureVideoDataOutput & AVCaptureAudioOutput - (branch : assetWriterModule)
     ** Please check the branches. **
