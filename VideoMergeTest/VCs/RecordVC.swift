@@ -2,8 +2,8 @@
 //  RecordVC.swift
 //  VideoMergeTest
 //
-//  Created by gitwebmobi2018 on 12/11/18.
-//  Copyright © 2018 gitwebmobi2018. All rights reserved.
+//  Created by Ivan on 12/11/18.
+//  Copyright © 2018 Ivan. All rights reserved.
 //
 
 import UIKit
@@ -44,8 +44,6 @@ class RecordVC: UIViewController {
     var movieFileOutput                     : AVCaptureMovieFileOutput?
     var photoOutput                         : AVCapturePhotoOutput?
     
-    var previewLayer                        : AVCaptureVideoPreviewLayer?
-    
     var flashMode                           = AVCaptureDevice.FlashMode.off
     
     var isRecording                         : Bool = false
@@ -60,7 +58,7 @@ class RecordVC: UIViewController {
     
     var isConnectedWithEarPiece             : Bool = false
     
-    var startAudioTime                      : Double?
+    var startAudioTime                      : CMTime = CMTime.zero
     
     var player                              : AVAudioPlayer?
     
@@ -199,20 +197,20 @@ extension RecordVC {
         videoTrack!.preferredTransform = aVideoAssetTrack.preferredTransform
         
         do {
+            try videoTrack!.insertTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: aVideoAssetTrack.timeRange.duration), of: aVideoAssetTrack, at: CMTime.zero)
             
-            
-            if self.isConnectedWithEarPiece {
-                let timeScale = aAudioAsset.duration.timescale
-                let startTime = CMTime(seconds: self.startAudioTime!, preferredTimescale: timeScale)
-//                let startTime = CMTime(seconds: 0, preferredTimescale: 600)
-                print("Time started audio file with headphone ----------> ", startTime, ", TimeScale is -----> ", timeScale)
-                try audioTrack!.insertTimeRange(CMTimeRangeMake(start: startTime, duration: aVideoAssetTrack.timeRange.duration), of: aAudioAssetTrack, at: startTime)
-                try audioOfVideoTrack!.insertTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: aVideoAssetTrack.timeRange.duration), of: aAudioOfVideoAssetTrack!, at: CMTime.zero)
-            } else {
+//            if self.isConnectedWithEarPiece {
+//                let timeScale = aAudioAsset.duration.timescale
+//                let startTime = CMTime(seconds: self.startAudioTime!, preferredTimescale: timeScale)
+////                let startTime = CMTime(seconds: 0, preferredTimescale: 600)
+//                print("Time started audio file with headphone ----------> ", startTime, ", TimeScale is -----> ", timeScale)
+//                try audioTrack!.insertTimeRange(CMTimeRangeMake(start: startTime, duration: aVideoAssetTrack.timeRange.duration), of: aAudioAssetTrack, at: startTime)
+//                try audioOfVideoTrack!.insertTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: aVideoAssetTrack.timeRange.duration), of: aAudioOfVideoAssetTrack!, at: CMTime.zero)
+//            } else {
                 try videoTrack!.insertTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: aVideoAssetTrack.timeRange.duration), of: aVideoAssetTrack, at: CMTime.zero)
                 
                 try audioOfVideoTrack!.insertTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: aVideoAssetTrack.timeRange.duration), of: aAudioOfVideoAssetTrack!, at: CMTime.zero)
-            }
+//            }
         } catch {
             print(error.localizedDescription)
         }
@@ -296,6 +294,114 @@ extension RecordVC {
         }
     }
     
+    /// Merges video and sound while keeping sound of the video too
+    ///
+    /// - Parameters:
+    ///   - videoUrl: URL to video file
+    ///   - audioUrl: URL to audio file
+    ///   - shouldFlipHorizontally: pass True if video was recorded using frontal camera otherwise pass False
+    ///   - completion: completion of saving: error or url with final video
+    func mergeVideoAndAudio(videoUrl: URL,
+                            audioUrl: URL,
+                            shouldFlipHorizontally: Bool = false,
+                            completion: @escaping (_ error: Error?, _ url: URL?) -> Void) {
+        
+        let mixComposition = AVMutableComposition()
+        var mutableCompositionVideoTrack = [AVMutableCompositionTrack]()
+        var mutableCompositionAudioTrack = [AVMutableCompositionTrack]()
+        var mutableCompositionAudioOfVideoTrack = [AVMutableCompositionTrack]()
+        
+        //start merge
+        
+        let aVideoAsset = AVAsset(url: videoUrl)
+        let aAudioAsset = AVAsset(url: audioUrl)
+        
+        let compositionAddVideo = mixComposition.addMutableTrack(withMediaType: AVMediaType.video,
+                                                                 preferredTrackID: kCMPersistentTrackID_Invalid)
+        
+        let compositionAddAudio = mixComposition.addMutableTrack(withMediaType: AVMediaType.audio,
+                                                                 preferredTrackID: kCMPersistentTrackID_Invalid)
+        
+        let compositionAddAudioOfVideo = mixComposition.addMutableTrack(withMediaType: AVMediaType.audio,
+                                                                        preferredTrackID: kCMPersistentTrackID_Invalid)
+        
+        let aVideoAssetTrack: AVAssetTrack = aVideoAsset.tracks(withMediaType: AVMediaType.video)[0]
+        let aAudioOfVideoAssetTrack: AVAssetTrack? = aVideoAsset.tracks(withMediaType: AVMediaType.audio).first
+        let aAudioAssetTrack: AVAssetTrack = aAudioAsset.tracks(withMediaType: AVMediaType.audio)[0]
+        
+        // Default must have tranformation
+        compositionAddVideo!.preferredTransform = aVideoAssetTrack.preferredTransform
+        
+        if shouldFlipHorizontally {
+            // Flip video horizontally
+            var frontalTransform: CGAffineTransform = CGAffineTransform(scaleX: -1.0, y: 1.0)
+            frontalTransform = frontalTransform.translatedBy(x: -aVideoAssetTrack.naturalSize.width, y: 0.0)
+            frontalTransform = frontalTransform.translatedBy(x: 0.0, y: -aVideoAssetTrack.naturalSize.width)
+            compositionAddVideo!.preferredTransform = frontalTransform
+        }
+        
+        mutableCompositionVideoTrack.append(compositionAddVideo!)
+        mutableCompositionAudioTrack.append(compositionAddAudio!)
+        mutableCompositionAudioOfVideoTrack.append(compositionAddAudioOfVideo!)
+        
+        do {
+            try mutableCompositionVideoTrack[0].insertTimeRange(CMTimeRangeMake(start: CMTime.zero,
+                                                                                duration: aVideoAssetTrack.timeRange.duration),
+                                                                of: aVideoAssetTrack,
+                                                                at: CMTime.zero)
+            
+            //In my case my audio file is longer then video file so i took videoAsset duration
+            //instead of audioAsset duration
+            if self.isConnectedWithEarPiece {
+                let realDura = CMTimeSubtract(aVideoAssetTrack.timeRange.duration, self.startAudioTime)
+                print("real video file duration ------> ", aVideoAsset.duration.seconds)
+                print("real audio played duration  ------> ", realDura.seconds)
+                
+                try mutableCompositionAudioTrack[0].insertTimeRange(CMTimeRangeMake(start: CMTime.zero,
+                                                                                    duration: realDura),
+                                                                    of: aAudioAssetTrack,
+                                                                    at: self.startAudioTime)
+            }
+            
+            // adding audio (of the video if exists) asset to the final composition
+            if let aAudioOfVideoAssetTrack = aAudioOfVideoAssetTrack {
+                try mutableCompositionAudioOfVideoTrack[0].insertTimeRange(CMTimeRangeMake(start: CMTime.zero,
+                                                                                           duration: aVideoAssetTrack.timeRange.duration),
+                                                                           of: aAudioOfVideoAssetTrack,
+                                                                           at: CMTime.zero)
+            }
+        } catch {
+            print(error.localizedDescription)
+        }
+        
+        // Exporting
+        let fileName = self.manageAppUrlService.newVideoFileName()
+        let savePathUrl = URL(fileURLWithPath: self.manageAppUrlService.getVideoFileFullPath(of: fileName))
+        
+        let assetExport: AVAssetExportSession = AVAssetExportSession(asset: mixComposition, presetName: AVAssetExportPresetHighestQuality)!
+        assetExport.outputFileType = AVFileType.mp4
+        assetExport.outputURL = savePathUrl
+        assetExport.shouldOptimizeForNetworkUse = true
+        
+        assetExport.exportAsynchronously { () -> Void in
+            switch assetExport.status {
+            case .completed:
+                print("success")
+                self.newVideoItem!.fileName = fileName
+                completion(nil, savePathUrl)
+            case .failed:
+                print("failed \(assetExport.error?.localizedDescription ?? "error nil")")
+                completion(assetExport.error, nil)
+            case .cancelled:
+                print("cancelled \(assetExport.error?.localizedDescription ?? "error nil")")
+                completion(assetExport.error, nil)
+            default:
+                print("complete")
+                completion(assetExport.error, nil)
+            }
+        }
+        
+    }
 }
 
 //MARK: - Camera functions
@@ -546,8 +652,11 @@ extension RecordVC {
     }
     
     func stopRecording() {
-        print(self.movieFileOutput?.recordedDuration.seconds ?? 0)
+        print("clicked stop button just now ------> ", self.movieFileOutput?.recordedDuration.seconds ?? 0)
+        self.startAudioTime = self.movieFileOutput?.recordedDuration ?? CMTime.zero
+        
         self.movieFileOutput!.stopRecording()
+        print(self.movieFileOutput?.recordedDuration.seconds)
     }
     
 }
@@ -559,17 +668,15 @@ extension RecordVC : AVCaptureFileOutputRecordingDelegate {
         
         self.timer = Timer.scheduledTimer(timeInterval: 1.0, target: self, selector: #selector(self.setTimer(timer:)), userInfo: nil, repeats: true )
         
-        DispatchQueue.global().sync {
+        DispatchQueue.global().async {
             self.player?.play()
-            if self.isConnectedWithEarPiece {
-                self.startAudioTime = self.movieFileOutput?.recordedDuration.seconds
-            }
         }
         
     }
     
     func fileOutput(_ output: AVCaptureFileOutput, didFinishRecordingTo outputFileURL: URL, from connections: [AVCaptureConnection], error: Error?) {
         
+        print("output did finished just now ------> ",output.recordedDuration.seconds)
         self.player?.stop()
         
         self.timer.invalidate()
@@ -619,15 +726,15 @@ extension RecordVC {
     func saveNewVideoToAppDir() {
         self.progressHUD.showHUD(self.view)
         
-        print(self.movieFileOutput?.recordedDuration.seconds ?? 0)
+        self.startAudioTime = CMTimeSubtract((self.movieFileOutput?.recordedDuration)!, self.startAudioTime)
+        print(self.startAudioTime.seconds)
         
         let videoUrl = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent((self.newVideoItem?.fileName)!)
         let audioUrl = Bundle.main.url(forResource: "test", withExtension: "mp3")
         
-        self.mergeFilesWithUrl(videoUrl: videoUrl, audioUrl: audioUrl!) { (isSuccess, resultDescription) in
+        self.mergeVideoAndAudio(videoUrl: videoUrl, audioUrl: audioUrl!) { (error, url) in
             var content : String
-            
-            if isSuccess {
+            if error == nil{
                 content = "Succeed!"
                 
                 let defaults = UserDefaults.standard
@@ -640,11 +747,10 @@ extension RecordVC {
                 videoItemArray.append(self.newVideoItem!)
                 let encodedObject = NSKeyedArchiver.archivedData(withRootObject: videoItemArray )
                 defaults.set(encodedObject, forKey: C_LocalVideoItemsKey )
-                
-            } else {
-                content = resultDescription
             }
-            
+            else{
+                content = (error?.localizedDescription)!
+            }
             DispatchQueue.main.async {
                 let  alert = UIAlertController(title: "VideoMergeTest", message: content, preferredStyle: .alert )
                 let ok = UIAlertAction(title: "Ok", style: .default, handler: { (okAction) in
@@ -658,6 +764,40 @@ extension RecordVC {
                 self.progressHUD.hideHUD()
             }
         }
+//        self.mergeFilesWithUrl(videoUrl: videoUrl, audioUrl: audioUrl!) { (isSuccess, resultDescription) in
+//            var content : String
+//
+//            if isSuccess {
+//                content = "Succeed!"
+//
+//                let defaults = UserDefaults.standard
+//                var videoItemArray = [VideoItem]()
+//                if let encodedObject = defaults.object(forKey: C_LocalVideoItemsKey) {
+//                    let object = NSKeyedUnarchiver.unarchiveObject(with: encodedObject as! Data )
+//                    videoItemArray = object as! [VideoItem]
+//                }
+//
+//                videoItemArray.append(self.newVideoItem!)
+//                let encodedObject = NSKeyedArchiver.archivedData(withRootObject: videoItemArray )
+//                defaults.set(encodedObject, forKey: C_LocalVideoItemsKey )
+//
+//            } else {
+//                content = resultDescription
+//            }
+//
+//            DispatchQueue.main.async {
+//                let  alert = UIAlertController(title: "VideoMergeTest", message: content, preferredStyle: .alert )
+//                let ok = UIAlertAction(title: "Ok", style: .default, handler: { (okAction) in
+//                    self.delegate.onDismiss()
+//                    self.dismiss(animated: true, completion: nil)
+//                })
+//                alert.addAction(ok)
+//
+//                self.present(alert, animated: true, completion: nil )
+//
+//                self.progressHUD.hideHUD()
+//            }
+//        }
     }
     
     func deleteFileAtPath(with fileName: String?) {
