@@ -500,7 +500,9 @@ extension RecordVC {
         func setAudioSession() throws {
             let audioSession = AVAudioSession.sharedInstance()
             do {
-                try audioSession.setCategory(AVAudioSession.Category.playAndRecord, mode: AVAudioSession.Mode.videoRecording, options: AVAudioSession.CategoryOptions.mixWithOthers)
+                try audioSession.setCategory(AVAudioSession.Category.playAndRecord,
+                                             mode: AVAudioSession.Mode.videoRecording,
+                                             options: [.mixWithOthers, .defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP])
             } catch {
                 print("Can't Set Audio Session Category: \(error)")
                 throw CameraServiceError.cannotSetAudioSession
@@ -637,8 +639,8 @@ extension RecordVC {
     
     func startRecording() {
         
-        self.sessionQueue.async {
-            
+//        self.sessionQueue.async {
+        
             self.movieFileOutput!.movieFragmentInterval = CMTime.invalid
             
             self.movieFileOutput!.connection(with: AVMediaType.video)?.videoOrientation = ((self.previewView.layer as! AVCaptureVideoPreviewLayer).connection?.videoOrientation)!
@@ -648,7 +650,7 @@ extension RecordVC {
             let outputFilePath = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(fileName)
             
             self.movieFileOutput!.startRecording(to: outputFilePath, recordingDelegate:self as AVCaptureFileOutputRecordingDelegate )
-        }
+//        }
     }
     
     func stopRecording() {
