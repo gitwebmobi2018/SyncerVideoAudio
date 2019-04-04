@@ -63,18 +63,6 @@ class RecordVC: UIViewController {
     var player                              : AVAudioPlayer?
     
     //MARK: - IBAction functions
-    @IBAction func onRecordBtn(_ sender: Any) {
-        update(clickedBtn: self.recordBtn)
-        
-        isRecording = !isRecording
-        
-        if isRecording {
-            self.isConnectedWithEarPiece = self.checkIfConnectedWithEarPiece()
-            self.startRecording()
-        } else {
-            self.stopRecording()
-        }
-    }
     
     @IBAction func onSwitchCamBtn(_ sender: Any) {
         update(clickedBtn: self.switchCamBtn)
@@ -87,6 +75,19 @@ class RecordVC: UIViewController {
     
     @IBAction func onDoneBtn(_ sender: Any) {
         
+    }
+    
+    @IBAction func onRecordBtn(_ sender: Any) {
+        update(clickedBtn: self.recordBtn)
+        
+        isRecording = !isRecording
+        
+        if isRecording {
+            self.isConnectedWithEarPiece = self.checkIfConnectedWithEarPiece()
+            self.startRecording()
+        } else {
+            self.stopRecording()
+        }
     }
     
     //MARK: - custom function
@@ -175,124 +176,6 @@ extension RecordVC {
 
 //MARK: - Video merge
 extension RecordVC {
-    
-    func mergeFilesWithUrl(videoUrl: URL, audioUrl: URL, completion: @escaping (Bool, String) -> Void) {
-        let mixComposition = AVMutableComposition()
-        
-        let aVideoAsset = AVAsset(url: videoUrl)
-        let aAudioAsset = AVAsset(url: audioUrl)
-        
-        let videoTrack = mixComposition.addMutableTrack(withMediaType: AVMediaType.video,
-                                                                 preferredTrackID: kCMPersistentTrackID_Invalid)
-        let audioTrack = mixComposition.addMutableTrack(withMediaType: AVMediaType.audio,
-                                                                 preferredTrackID: kCMPersistentTrackID_Invalid)
-        let audioOfVideoTrack = mixComposition.addMutableTrack(withMediaType: AVMediaType.audio,
-                                                                        preferredTrackID: kCMPersistentTrackID_Invalid)
-        
-        let aVideoAssetTrack = aVideoAsset.tracks(withMediaType: AVMediaType.video)[0]
-        let aAudioAssetTrack = aAudioAsset.tracks(withMediaType: AVMediaType.audio)[0]
-        let aAudioOfVideoAssetTrack = aVideoAsset.tracks(withMediaType: AVMediaType.audio).first
-        
-        // Default must have tranformation
-        videoTrack!.preferredTransform = aVideoAssetTrack.preferredTransform
-        
-        do {
-            try videoTrack!.insertTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: aVideoAssetTrack.timeRange.duration), of: aVideoAssetTrack, at: CMTime.zero)
-            
-//            if self.isConnectedWithEarPiece {
-//                let timeScale = aAudioAsset.duration.timescale
-//                let startTime = CMTime(seconds: self.startAudioTime!, preferredTimescale: timeScale)
-////                let startTime = CMTime(seconds: 0, preferredTimescale: 600)
-//                print("Time started audio file with headphone ----------> ", startTime, ", TimeScale is -----> ", timeScale)
-//                try audioTrack!.insertTimeRange(CMTimeRangeMake(start: startTime, duration: aVideoAssetTrack.timeRange.duration), of: aAudioAssetTrack, at: startTime)
-//                try audioOfVideoTrack!.insertTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: aVideoAssetTrack.timeRange.duration), of: aAudioOfVideoAssetTrack!, at: CMTime.zero)
-//            } else {
-                try videoTrack!.insertTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: aVideoAssetTrack.timeRange.duration), of: aVideoAssetTrack, at: CMTime.zero)
-                
-                try audioOfVideoTrack!.insertTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: aVideoAssetTrack.timeRange.duration), of: aAudioOfVideoAssetTrack!, at: CMTime.zero)
-//            }
-        } catch {
-            print(error.localizedDescription)
-        }
-        //////////////////////////////////////////////////////////////////////////////////////////////////
-        
-        let mainInstruction = AVMutableVideoCompositionInstruction()
-        mainInstruction.timeRange = CMTimeRangeMake(start: CMTime.zero, duration: mixComposition.duration)
-        
-        let videolayerInstruction = AVMutableVideoCompositionLayerInstruction.init(assetTrack: videoTrack! )
-        var isVideoAssetPortrait = false
-        let videoTransform : CGAffineTransform = aVideoAssetTrack.preferredTransform
-        
-        if (videoTransform.a == 0 && videoTransform.b == 1.0 && videoTransform.c == -1.0 && videoTransform.d == 0) {
-            //    videoAssetOrientation = UIImageOrientation.right
-            isVideoAssetPortrait = true
-        }
-        if (videoTransform.a == 0 && videoTransform.b == -1.0 && videoTransform.c == 1.0 && videoTransform.d == 0) {
-            //    videoAssetOrientation =  UIImageOrientation.left
-            isVideoAssetPortrait = true
-        }
-        if (videoTransform.a == 1.0 && videoTransform.b == 0 && videoTransform.c == 0 && videoTransform.d == 1.0) {
-            //    videoAssetOrientation =  UIImageOrientation.up
-        }
-        if (videoTransform.a == -1.0 && videoTransform.b == 0 && videoTransform.c == 0 && videoTransform.d == -1.0) {
-            //    videoAssetOrientation = UIImageOrientation.down
-        }
-        videolayerInstruction.setTransform(aVideoAssetTrack.preferredTransform, at: CMTime.zero)
-        videolayerInstruction.setOpacity(0.0, at:mixComposition.duration)
-        
-        mainInstruction.layerInstructions = NSArray(object: videolayerInstruction) as! [AVVideoCompositionLayerInstruction]
-        
-        let mainCompositionInst = AVMutableVideoComposition()
-        
-        var naturalSize = CGSize()
-        if isVideoAssetPortrait {
-            naturalSize = CGSize(width: aVideoAssetTrack.naturalSize.height, height: aVideoAssetTrack.naturalSize.width)
-        } else {
-            naturalSize = aVideoAssetTrack.naturalSize
-        }
-        
-        var renderWidth = 0.0, renderHeight = 0.0
-        renderWidth = Double(naturalSize.width)
-        renderHeight = Double(naturalSize.height)
-        
-        mainCompositionInst.renderSize = CGSize(width: renderWidth, height: renderHeight)
-        mainCompositionInst.instructions = NSArray(object: mainInstruction) as! [AVVideoCompositionInstructionProtocol]
-        mainCompositionInst.frameDuration = CMTimeMake(value: 1, timescale: 30)
-        
-        
-        let fileName = self.manageAppUrlService.newVideoFileName()
-        let savePathUrl = URL(fileURLWithPath: self.manageAppUrlService.getVideoFileFullPath(of: fileName))
-        
-        let assetExport: AVAssetExportSession = AVAssetExportSession(asset: mixComposition, presetName: AVAssetExportPresetHighestQuality)!
-        assetExport.outputFileType = AVFileType.mov
-        assetExport.outputURL = savePathUrl
-        assetExport.shouldOptimizeForNetworkUse = true
-        assetExport.videoComposition = mainCompositionInst
-        
-        assetExport.exportAsynchronously { () -> Void in
-            switch assetExport.status {
-                
-            case .completed:
-                self.newVideoItem!.fileName = fileName
-                completion(true, "success")
-                
-            case  .failed:
-                completion(false, "failed \(assetExport.error ?? "Error" as! Error)")
-                
-            case .cancelled:
-                completion(false, "cancelled \(assetExport.error ?? "Error" as! Error)")
-                
-            case .exporting:
-                completion(false, "exporting \(assetExport.error ?? "Error" as! Error)")
-                
-            case .waiting:
-                completion(false, "waiting \(assetExport.error ?? "Error" as! Error)")
-                
-            case .unknown:
-                completion(false, "unknown \(assetExport.error ?? "Error" as! Error)")
-            }
-        }
-    }
     
     /// Merges video and sound while keeping sound of the video too
     ///
@@ -401,6 +284,124 @@ extension RecordVC {
             }
         }
         
+    }
+    
+    func mergeFilesWithUrl(videoUrl: URL, audioUrl: URL, completion: @escaping (Bool, String) -> Void) {
+        let mixComposition = AVMutableComposition()
+        
+        let aVideoAsset = AVAsset(url: videoUrl)
+        let aAudioAsset = AVAsset(url: audioUrl)
+        
+        let videoTrack = mixComposition.addMutableTrack(withMediaType: AVMediaType.video,
+                                                        preferredTrackID: kCMPersistentTrackID_Invalid)
+        let audioTrack = mixComposition.addMutableTrack(withMediaType: AVMediaType.audio,
+                                                        preferredTrackID: kCMPersistentTrackID_Invalid)
+        let audioOfVideoTrack = mixComposition.addMutableTrack(withMediaType: AVMediaType.audio,
+                                                               preferredTrackID: kCMPersistentTrackID_Invalid)
+        
+        let aVideoAssetTrack = aVideoAsset.tracks(withMediaType: AVMediaType.video)[0]
+        let aAudioAssetTrack = aAudioAsset.tracks(withMediaType: AVMediaType.audio)[0]
+        let aAudioOfVideoAssetTrack = aVideoAsset.tracks(withMediaType: AVMediaType.audio).first
+        
+        // Default must have tranformation
+        videoTrack!.preferredTransform = aVideoAssetTrack.preferredTransform
+        
+        do {
+            try videoTrack!.insertTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: aVideoAssetTrack.timeRange.duration), of: aVideoAssetTrack, at: CMTime.zero)
+            
+            //            if self.isConnectedWithEarPiece {
+            //                let timeScale = aAudioAsset.duration.timescale
+            //                let startTime = CMTime(seconds: self.startAudioTime!, preferredTimescale: timeScale)
+            ////                let startTime = CMTime(seconds: 0, preferredTimescale: 600)
+            //                print("Time started audio file with headphone ----------> ", startTime, ", TimeScale is -----> ", timeScale)
+            //                try audioTrack!.insertTimeRange(CMTimeRangeMake(start: startTime, duration: aVideoAssetTrack.timeRange.duration), of: aAudioAssetTrack, at: startTime)
+            //                try audioOfVideoTrack!.insertTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: aVideoAssetTrack.timeRange.duration), of: aAudioOfVideoAssetTrack!, at: CMTime.zero)
+            //            } else {
+            try videoTrack!.insertTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: aVideoAssetTrack.timeRange.duration), of: aVideoAssetTrack, at: CMTime.zero)
+            
+            try audioOfVideoTrack!.insertTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: aVideoAssetTrack.timeRange.duration), of: aAudioOfVideoAssetTrack!, at: CMTime.zero)
+            //            }
+        } catch {
+            print(error.localizedDescription)
+        }
+        //////////////////////////////////////////////////////////////////////////////////////////////////
+        
+        let mainInstruction = AVMutableVideoCompositionInstruction()
+        mainInstruction.timeRange = CMTimeRangeMake(start: CMTime.zero, duration: mixComposition.duration)
+        
+        let videolayerInstruction = AVMutableVideoCompositionLayerInstruction.init(assetTrack: videoTrack! )
+        var isVideoAssetPortrait = false
+        let videoTransform : CGAffineTransform = aVideoAssetTrack.preferredTransform
+        
+        if (videoTransform.a == 0 && videoTransform.b == 1.0 && videoTransform.c == -1.0 && videoTransform.d == 0) {
+            //    videoAssetOrientation = UIImageOrientation.right
+            isVideoAssetPortrait = true
+        }
+        if (videoTransform.a == 0 && videoTransform.b == -1.0 && videoTransform.c == 1.0 && videoTransform.d == 0) {
+            //    videoAssetOrientation =  UIImageOrientation.left
+            isVideoAssetPortrait = true
+        }
+        if (videoTransform.a == 1.0 && videoTransform.b == 0 && videoTransform.c == 0 && videoTransform.d == 1.0) {
+            //    videoAssetOrientation =  UIImageOrientation.up
+        }
+        if (videoTransform.a == -1.0 && videoTransform.b == 0 && videoTransform.c == 0 && videoTransform.d == -1.0) {
+            //    videoAssetOrientation = UIImageOrientation.down
+        }
+        videolayerInstruction.setTransform(aVideoAssetTrack.preferredTransform, at: CMTime.zero)
+        videolayerInstruction.setOpacity(0.0, at:mixComposition.duration)
+        
+        mainInstruction.layerInstructions = NSArray(object: videolayerInstruction) as! [AVVideoCompositionLayerInstruction]
+        
+        let mainCompositionInst = AVMutableVideoComposition()
+        
+        var naturalSize = CGSize()
+        if isVideoAssetPortrait {
+            naturalSize = CGSize(width: aVideoAssetTrack.naturalSize.height, height: aVideoAssetTrack.naturalSize.width)
+        } else {
+            naturalSize = aVideoAssetTrack.naturalSize
+        }
+        
+        var renderWidth = 0.0, renderHeight = 0.0
+        renderWidth = Double(naturalSize.width)
+        renderHeight = Double(naturalSize.height)
+        
+        mainCompositionInst.renderSize = CGSize(width: renderWidth, height: renderHeight)
+        mainCompositionInst.instructions = NSArray(object: mainInstruction) as! [AVVideoCompositionInstructionProtocol]
+        mainCompositionInst.frameDuration = CMTimeMake(value: 1, timescale: 30)
+        
+        
+        let fileName = self.manageAppUrlService.newVideoFileName()
+        let savePathUrl = URL(fileURLWithPath: self.manageAppUrlService.getVideoFileFullPath(of: fileName))
+        
+        let assetExport: AVAssetExportSession = AVAssetExportSession(asset: mixComposition, presetName: AVAssetExportPresetHighestQuality)!
+        assetExport.outputFileType = AVFileType.mov
+        assetExport.outputURL = savePathUrl
+        assetExport.shouldOptimizeForNetworkUse = true
+        assetExport.videoComposition = mainCompositionInst
+        
+        assetExport.exportAsynchronously { () -> Void in
+            switch assetExport.status {
+                
+            case .completed:
+                self.newVideoItem!.fileName = fileName
+                completion(true, "success")
+                
+            case  .failed:
+                completion(false, "failed \(assetExport.error ?? "Error" as! Error)")
+                
+            case .cancelled:
+                completion(false, "cancelled \(assetExport.error ?? "Error" as! Error)")
+                
+            case .exporting:
+                completion(false, "exporting \(assetExport.error ?? "Error" as! Error)")
+                
+            case .waiting:
+                completion(false, "waiting \(assetExport.error ?? "Error" as! Error)")
+                
+            case .unknown:
+                completion(false, "unknown \(assetExport.error ?? "Error" as! Error)")
+            }
+        }
     }
 }
 
@@ -639,18 +640,15 @@ extension RecordVC {
     
     func startRecording() {
         
-//        self.sessionQueue.async {
+        self.movieFileOutput!.movieFragmentInterval = CMTime.invalid
         
-            self.movieFileOutput!.movieFragmentInterval = CMTime.invalid
-            
-            self.movieFileOutput!.connection(with: AVMediaType.video)?.videoOrientation = ((self.previewView.layer as! AVCaptureVideoPreviewLayer).connection?.videoOrientation)!
-            
-            // Start recording to a temporary file.
-            let fileName = self.manageAppUrlService.newVideoFileName()
-            let outputFilePath = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(fileName)
-            
-            self.movieFileOutput!.startRecording(to: outputFilePath, recordingDelegate:self as AVCaptureFileOutputRecordingDelegate )
-//        }
+        self.movieFileOutput!.connection(with: AVMediaType.video)?.videoOrientation = ((self.previewView.layer as! AVCaptureVideoPreviewLayer).connection?.videoOrientation)!
+        
+        // Start recording to a temporary file.
+        let fileName = self.manageAppUrlService.newVideoFileName()
+        let outputFilePath = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(fileName)
+        
+        self.movieFileOutput!.startRecording(to: outputFilePath, recordingDelegate:self as AVCaptureFileOutputRecordingDelegate )
     }
     
     func stopRecording() {
