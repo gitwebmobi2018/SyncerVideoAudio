@@ -656,7 +656,6 @@ extension RecordVC {
         self.startAudioTime = self.movieFileOutput?.recordedDuration ?? CMTime.zero
         
         self.movieFileOutput!.stopRecording()
-        print(self.movieFileOutput?.recordedDuration.seconds)
     }
     
 }
